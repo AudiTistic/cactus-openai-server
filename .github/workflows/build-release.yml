@@ -1,4 +1,4 @@
-'s=compileSdk  's@compileSdkname: Build and Release APK
+name: Build and Release APK
 
 on:
   push:
@@ -32,7 +32,8 @@ jobs:
         run: flutter create . --platforms=android --project-name=cactus_openai_server
 
       - name: Set Android compileSdk to 35
-      run: sed -i 's@compileSdk = flutter.compileSdkVersion@compileSdk = 35@' android/app/build.gradle
+        run: sed -i 's@compileSdk = flutter.compileSdkVersion@compileSdk = 35@' android/app/build.gradle
+
       - name: Build release APK
         run: flutter build apk --release
 
