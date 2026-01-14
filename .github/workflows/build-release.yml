@@ -33,7 +33,6 @@ jobs:
 
     - name: Set Android compileSdk to 35
   run: sed -i 's@compileSdk = flutter.compileSdkVersion@compileSdk = 35@' android/app/build.gradle
-
 - name: Build release APK
   run: flutter build apk --release
 
