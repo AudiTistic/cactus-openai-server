@@ -27,6 +27,9 @@ jobs:
     
     - name: Install dependencies
       run: flutter pub get
+
+          - name: Generate Android platform files
+      run: flutter create . --platforms=android
     
     - name: Build APK
       run: flutter build apk --release
