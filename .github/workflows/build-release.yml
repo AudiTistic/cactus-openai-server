@@ -30,6 +30,10 @@ jobs:
 
     - name: Generate Android platform files
       run: flutter create . --platforms=android     --project-name=cactus_openai_server
+
+          - name: Set Android compileSdk to 35
+      run: |
+        echo "flutter.compileSdkVersion=35" >> android/local.properties
     - name: Build APK
       run: flutter build apk --release
     
