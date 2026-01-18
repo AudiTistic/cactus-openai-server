@@ -145,7 +145,7 @@ class _ServerScreenState extends State<ServerScreen> {
         
         // Generate with Cactus
         final result = await _cactusLM!.generateCompletion(
-          prompt: prompt,
+          input: prompt,
           maxTokens: (payload['max_tokens'] as int?) ?? 256,
           temperature: ((payload['temperature'] as num?) ?? 0.7).toDouble(),
         );
