@@ -5,11 +5,12 @@ description: Turn your Android phone into a high-performance OpenAI-compatible
 publish_to: none
 version: 1.0.0+1
 environment:
-  sdk: ">=3.0.0 <4.0.0"
+  sdk'>=3.7.0 <4.0.0'
+  <4.0.0"
 dependencies:
   flutter:
     sdk: flutter
-  cactus: ^0.2.7
+  cactus: ^1.2.1
   shelf: ^1.4.1
   shelf_router: ^1.1.4
   network_info_plus: ^5.0.0
