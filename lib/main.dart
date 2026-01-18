@@ -63,10 +63,10 @@ class _ServerScreenState extends State<ServerScreen> {
       _cactusLM = CactusLM();
       setState(() => _status = 'Downloading model $_modelSlug...');
       
-      await _cactusLM!.downloadModel(slug: _modelSlug);
+      await _cactusLM!.downloadModel(model: _modelSlug);
       
       setState(() => _status = 'Loading model...');
-      await _cactusLM!.initializeModel(CactusInitParams(model: _modelSlug));
+      await _cactusLM!.initializeModel();
       
       setState(() {
         _isModelLoaded = true;
