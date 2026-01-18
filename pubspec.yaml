@@ -1,11 +1,11 @@
+---
 name: cactus_openai_server
-description: Turn your Android phone into a high-performance OpenAI-compatible API server using Cactus LLM engine.
-publish_to: 'none'
+description: Turn your Android phone into a high-performance OpenAI-compatible
+  API server using Cactus LLM engine.
+publish_to: none
 version: 1.0.0+1
-
 environment:
-  sdk: '>=3.0.0 <4.0.0'
-
+  sdk: ">=3.0.0 <4.0.0"
 dependencies:
   flutter:
     sdk: flutter
@@ -17,9 +17,7 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^3.0.0
-
 flutter:
-  uses-material-design: true 
-
+  uses-material-design: true
 dependency_overrides:
   path: ^1.9.0
