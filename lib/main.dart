@@ -66,9 +66,7 @@ class _ServerScreenState extends State<ServerScreen> {
       await _cactusLM!.downloadModel(slug: _modelSlug);
       
       setState(() => _status = 'Loading model...');
-      await _cactusLM!.loadModel(slug: _modelSlug);
-      
-      setState(() {
+      await _cactusLM!.initializeModel(_modelSlug);      await _cactusLM!.downloadModel(_modelSlug);      setState(() {
         _isModelLoaded = true;
         _status = 'Model loaded: $_modelSlug';
       });
@@ -266,8 +264,7 @@ class _ServerScreenState extends State<ServerScreen> {
                         color: _isRunning ? Colors.green : Colors.grey,
                       ),
                     ),
-                    if (_isRunning) ..[
-                      const SizedBox(height: 16),
+            if (_isRunning)                      const SizedBox(height: 16),
                       const Text('Listening: 0.0.0.0:8080'),
                       const SizedBox(height: 8),
                       Text('Model: $_modelSlug'),
