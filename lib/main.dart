@@ -127,28 +127,8 @@ class _ServerScreenState extends State<ServerScreen> {
     }
   }
 
-  String? _getLocalIP() {
-    try {
-      final interfaces = NetworkInterface.listSync(
-        type: InternetAddressType.IPv4,
-      );
-      for (var interface in interfaces) {
-        for (var addr in interface.addresses) {
-          if (!addr.isLoopback) {
-            return addr.address;
-          }
-        }
-      }
-    } catch (e) {
-      return null;
-    }
-    return null;
-  }
-
   @override
   Widget build(BuildContext context) {
-    final localIP = _getLocalIP();
-    
     return Scaffold(
       appBar: AppBar(
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
@@ -206,10 +186,7 @@ class _ServerScreenState extends State<ServerScreen> {
                         ),
                       ),
                       const SizedBox(height: 16),
-                      if (localIP != null)
-                        Text('Local IP: $localIP:$_port'),
-                      if (localIP != null) const SizedBox(height: 8),
-                      Text('Localhost: http://localhost:$_port'),
+                      const Text('Listening: 0.0.0.0:8080'),
                       const SizedBox(height: 8),
                       Text('Backend: $_backendUrl'),
                       const SizedBox(height: 16),
