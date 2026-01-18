@@ -195,6 +195,88 @@ class _ServerScreenState extends State<ServerScreen> {
       // Handle POST /openai/verify
       if (request.url.path == 'openai/verify' && request.method == 'POST') {
         return shelf.Response.ok(
+          
+      // Handle POST /v1/completions (legacy)
+      if (request.url.path == 'v1/completions' && request.method == 'POST') {
+        final body = await request.readAsString();
+        final Map<String, dynamic> requestData = json.decode(body);
+        final prompt = requestData['prompt'] as String?;
+        
+        if (prompt == null || prompt.isEmpty) {
+          return shelf.Response(400, 
+            body: json.encode({'error': 'prompt field is required'}),
+            headers: {'Content-Type': 'application/json'},
+          );
+        }
+
+        // Convert to chat message format
+        final result = await _cactusLM!.generateCompletion(
+          messages: [ChatMessage(content: prompt, role: 'user')],
+          params: CactusCompletionParams(
+            maxTokens: requestData['max_tokens'] as int? ?? 512,
+            temperature: (requestData['temperature'] as num?)?.toDouble() ?? 0.7,
+          ),
+        );
+
+        if (!result.success) {
+          return shelf.Response.internalServerError(
+            body: json.encode({'error': result.response}),
+            headers: {'Content-Type': 'application/json'},
+          );
+        }
+
+        final response = {
+          'id': 'cmpl-${DateTime.now().millisecondsSinceEpoch}',
+          'object': 'text_completion',
+          'created': DateTime.now().millisecondsSinceEpoch ~/ 1000,
+          'model': _useCustomModel ? _customModelController.text : _modelSlug,
+          'choices': [{
+            'text': result.response,
+            'index': 0,
+            'finish_reason': 'stop',
+          }],
+          'usage': {
+            'prompt_tokens': 0,
+            'completion_tokens': 0,
+            'total_tokens': 0,
+          },
+        };
+
+        return shelf.Response.ok(
+          json.encode(response),
+          headers: {'Content-Type': 'application/json'},
+        );
+      }
+
+      // Handle GET /v1/models/{id}
+      if (request.url.path.startsWith('v1/models/') && request.method == 'GET') {
+        final modelId = request.url.path.substring('v1/models/'.length);
+        final currentModelId = _useCustomModel ? _customModelController.text : _modelSlug;
+        
+        if (modelId != currentModelId) {
+          return shelf.Response.notFound(json.encode({'error': 'Model not found'}));
+        }
+
+        final response = {
+          'id': currentModelId,
+          'object': 'model',
+          'created': DateTime.now().millisecondsSinceEpoch ~/ 1000,
+          'owned_by': 'cactus-ai',
+        };
+
+        return shelf.Response.ok(
+          json.encode(response),
+          headers: {'Content-Type': 'application/json'},
+        );
+      }
+
+      // Handle POST /v1/embeddings (stub - Cactus doesn't support embeddings yet)
+      if (request.url.path == 'v1/embeddings' && request.method == 'POST') {
+        return shelf.Response(501,
+          body: json.encode({'error': 'Embeddings not supported by Cactus AI'}),
+          headers: {'Content-Type': 'application/json'},
+        );
+      }
           json.encode({'status': 'ok'}),
           headers: {'Content-Type': 'application/json'},
         );
