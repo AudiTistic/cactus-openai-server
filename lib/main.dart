@@ -41,19 +41,50 @@ class _ServerScreenState extends State<ServerScreen> {
   final int _port = 8080;
   String _modelSlug = 'qwen3-0.6';
   String _status = 'Stopped';
-  final TextEditingController _modelController = TextEditingController();
+  String _deviceIP = 'Detecting...';
+  bool _useCustomModel = false;
+  
+  final TextEditingController _customModelController = TextEditingController();
+  
+  // Common Cactus AI models
+  final List<String> _commonModels = [
+    'qwen3-0.6',
+    'qwen3-1.7',
+    'gemma3-270m',
+    'phi4-3.8',
+    'llama3.2-1',
+    'llama3.2-3',
+  ];
 
   @override
   void initState() {
     super.initState();
-    _modelController.text = _modelSlug;
+    _detectIP();
   }
 
   @override
   void dispose() {
     _stopServer();
-    _modelController.dispose();
+    _customModelController.dispose();
     super.dispose();
+  }
+
+  Future<void> _detectIP() async {
+    try {
+      final interfaces = await NetworkInterface.list();
+      for (var interface in interfaces) {
+        for (var addr in interface.addresses) {
+          // Get the first non-loopback IPv4 address
+          if (addr.type == InternetAddressType.IPv4 && !addr.isLoopback) {
+            setState(() => _deviceIP = addr.address);
+            return;
+          }
+        }
+      }
+      setState(() => _deviceIP = '0.0.0.0');
+    } catch (e) {
+      setState(() => _deviceIP = 'Unknown');
+    }
   }
 
   Future<void> _initializeModel() async {
@@ -61,16 +92,26 @@ class _ServerScreenState extends State<ServerScreen> {
     
     try {
       _cactusLM = CactusLM();
-      setState(() => _status = 'Downloading model $_modelSlug...');
       
-      await _cactusLM!.downloadModel(model: _modelSlug);
+      final modelToLoad = _useCustomModel 
+          ? _customModelController.text.trim()
+          : _modelSlug;
+      
+      setState(() => _status = 'Downloading model $modelToLoad...');
+      
+      // Support both slug and HF URLs
+      if (modelToLoad.startsWith('http')) {
+        await _cactusLM!.downloadModel(model: modelToLoad);
+      } else {
+        await _cactusLM!.downloadModel(model: modelToLoad);
+      }
       
       setState(() => _status = 'Loading model...');
       await _cactusLM!.initializeModel();
       
       setState(() {
         _isModelLoaded = true;
-        _status = 'Model loaded: $_modelSlug';
+        _status = 'Model loaded: $modelToLoad';
       });
     } catch (e) {
       setState(() => _status = 'Error: $e');
@@ -84,7 +125,7 @@ class _ServerScreenState extends State<ServerScreen> {
 
   Future<void> _startServer() async {
     if (_isRunning) return;
-
+    
     setState(() => _status = 'Starting server...');
     
     // Initialize model if not loaded
@@ -102,10 +143,10 @@ class _ServerScreenState extends State<ServerScreen> {
           .addHandler(_handleRequest);
 
       _server = await shelf_io.serve(handler, InternetAddress.anyIPv4, _port);
+      
       setState(() {
         _isRunning = true;
-        _modelSlug = _modelController.text;
-        _status = 'Server running on 0.0.0.0:$_port';
+        _status = 'Server running on $_deviceIP:$_port';
       });
     } catch (e) {
       setState(() => _status = 'Error starting server: $e');
@@ -131,11 +172,21 @@ class _ServerScreenState extends State<ServerScreen> {
     try {
       // Parse incoming OpenAI-compatible request
       final body = await request.readAsString();
+      
+      // Handle empty body
+      if (body.isEmpty) {
+        return shelf.Response(400, 
+          body: json.encode({'error': 'Request body is required'}),
+          headers: {'Content-Type': 'application/json'},
+        );
+      }
+      
       final Map<String, dynamic> requestData = json.decode(body);
 
       // Handle /v1/chat/completions
       if (request.url.path == 'v1/chat/completions') {
         final messages = requestData['messages'] as List<dynamic>?;
+        
         if (messages == null || messages.isEmpty) {
           return shelf.Response(400, 
             body: json.encode({'error': 'messages field is required'}),
@@ -170,7 +221,7 @@ class _ServerScreenState extends State<ServerScreen> {
           'id': 'chatcmpl-${DateTime.now().millisecondsSinceEpoch}',
           'object': 'chat.completion',
           'created': DateTime.now().millisecondsSinceEpoch ~/ 1000,
-          'model': _modelSlug,
+          'model': _useCustomModel ? _customModelController.text : _modelSlug,
           'choices': [{
             'index': 0,
             'message': {
@@ -197,7 +248,7 @@ class _ServerScreenState extends State<ServerScreen> {
         final response = {
           'object': 'list',
           'data': [{
-            'id': _modelSlug,
+            'id': _useCustomModel ? _customModelController.text : _modelSlug,
             'object': 'model',
             'created': DateTime.now().millisecondsSinceEpoch ~/ 1000,
             'owned_by': 'cactus-ai',
@@ -226,20 +277,63 @@ class _ServerScreenState extends State<ServerScreen> {
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
         title: const Text('Cactus OpenAI Server'),
       ),
-      body: Padding(
+      body: SingleChildScrollView(
         padding: const EdgeInsets.all(16.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            TextField(
-              controller: _modelController,
-              decoration: const InputDecoration(
-                labelText: 'Model Slug',
-                hintText: 'qwen3-0.6, gemma3-270m',
-                border: OutlineInputBorder(),
-              ),
-              enabled: !_isRunning,
+            // Model Selection
+            Row(
+              children: [
+                Checkbox(
+                  value: !_useCustomModel,
+                  onChanged: _isRunning ? null : (val) {
+                    setState(() => _useCustomModel = !val!);
+                  },
+                ),
+                const Text('Use preset model'),
+              ],
             ),
+            if (!_useCustomModel)
+              DropdownButtonFormField<String>(
+                value: _modelSlug,
+                decoration: const InputDecoration(
+                  labelText: 'Select Model',
+                  border: OutlineInputBorder(),
+                ),
+                items: _commonModels.map((model) => DropdownMenuItem(
+                  value: model,
+                  child: Text(model),
+                )).toList(),
+                onChanged: _isRunning ? null : (value) {
+                  if (value != null) {
+                    setState(() => _modelSlug = value);
+                  }
+                },
+              ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Checkbox(
+                  value: _useCustomModel,
+                  onChanged: _isRunning ? null : (val) {
+                    setState(() => _useCustomModel = val!);
+                  },
+                ),
+                const Text('Use custom model/HF URL'),
+              ],
+            ),
+            if (_useCustomModel)
+              TextField(
+                controller: _customModelController,
+                decoration: const InputDecoration(
+                  labelText: 'Model slug or Hugging Face URL',
+                  hintText: 'qwen3-1.7 or https://huggingface.co/...',
+                  border: OutlineInputBorder(),
+                ),
+                enabled: !_isRunning,
+                maxLines: 2,
+              ),
             const SizedBox(height: 24),
             ElevatedButton(
               onPressed: _isRunning ? _stopServer : _startServer,
@@ -266,18 +360,27 @@ class _ServerScreenState extends State<ServerScreen> {
                         color: _isRunning ? Colors.green : Colors.grey,
                       ),
                     ),
+                    const SizedBox(height: 16),
+                    Text('Device IP: $_deviceIP',
+                      style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                    ),
                     if (_isRunning) ...[
-                      const SizedBox(height: 16),
-                      const Text('Listening: 0.0.0.0:8080'),
                       const SizedBox(height: 8),
-                      Text('Model: $_modelSlug'),
+                      Text('Port: $_port'),
+                      const SizedBox(height: 8),
+                      SelectableText(
+                        'Base URL: http://$_deviceIP:$_port',
+                        style: const TextStyle(fontFamily: 'monospace', color: Colors.blue),
+                      ),
+                      const SizedBox(height: 8),
+                      Text('Model: ${_useCustomModel ? _customModelController.text : _modelSlug}'),
                       const SizedBox(height: 16),
                       const Text(
                         'OpenAI-Compatible Endpoints:',
                         style: TextStyle(fontWeight: FontWeight.bold),
                       ),
                       const Text('• POST /v1/chat/completions'),
-                      const Text('• GET  /v1/models'),
+                      const Text('• GET /v1/models'),
                     ],
                   ],
                 ),
