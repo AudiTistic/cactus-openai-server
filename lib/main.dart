@@ -89,18 +89,13 @@ class _ServerScreenState extends State<ServerScreen> {
 
   Future<shelf.Response> _handleRequest(shelf.Request request) async {
     try {
-      // Only handle OpenAI API endpoints
       if (!request.url.path.startsWith('v1/')) {
         return shelf.Response.notFound('Not Found');
       }
 
-      // Construct backend URL
       final backendUri = Uri.parse('$_backendUrl/${request.url.path}');
-      
-      // Read request body
       final body = await request.readAsString();
       
-      // Forward request to backend
       final headers = {
         'Content-Type': 'application/json',
         if (_apiKey.isNotEmpty) 'Authorization': 'Bearer $_apiKey',
@@ -120,7 +115,6 @@ class _ServerScreenState extends State<ServerScreen> {
         return shelf.Response(405, body: 'Method Not Allowed');
       }
 
-      // Return backend response
       return shelf.Response(
         backendResponse.statusCode,
         body: backendResponse.body,
@@ -135,7 +129,10 @@ class _ServerScreenState extends State<ServerScreen> {
 
   String? _getLocalIP() {
     try {
-      for (var interface in NetworkInterface.list(type: InternetAddressType.IPv4).first) {
+      final interfaces = NetworkInterface.listSync(
+        type: InternetAddressType.IPv4,
+      );
+      for (var interface in interfaces) {
         for (var addr in interface.addresses) {
           if (!addr.isLoopback) {
             return addr.address;
@@ -193,7 +190,7 @@ class _ServerScreenState extends State<ServerScreen> {
               ),
             ),
             const SizedBox(height: 24),
-            if (_isRunning) ..[
+            if (_isRunning)
               Card(
                 child: Padding(
                   padding: const EdgeInsets.all(16.0),
@@ -209,10 +206,9 @@ class _ServerScreenState extends State<ServerScreen> {
                         ),
                       ),
                       const SizedBox(height: 16),
-                      if (localIP != null) ..[
+                      if (localIP != null)
                         Text('Local IP: $localIP:$_port'),
-                        const SizedBox(height: 8),
-                      ],
+                      if (localIP != null) const SizedBox(height: 8),
                       Text('Localhost: http://localhost:$_port'),
                       const SizedBox(height: 8),
                       Text('Backend: $_backendUrl'),
@@ -227,7 +223,6 @@ class _ServerScreenState extends State<ServerScreen> {
                   ),
                 ),
               ),
-            ],
           ],
         ),
       ),
