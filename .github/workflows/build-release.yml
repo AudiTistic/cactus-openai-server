@@ -31,7 +31,7 @@ jobs:
         run: flutter create . --platforms=android --project-name=cactus_openai_server
 
       - name: Set Android compileSdk to 36
-        run: sed -i 's@compileSdk = flutter.compileSdkVersion@compileSdk = 36@@@' android/app/build.gradle.kts
+        run: sed -i 's@compileSdk = flutter.compileSdkVersion@compileSdk = 36@' android/app/build.gradle.kts
 
       - name: Build release APK
         run: flutter build apk --release
