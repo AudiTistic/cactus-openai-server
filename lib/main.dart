@@ -66,12 +66,16 @@ class _ServerScreenState extends State<ServerScreen> {
       await _cactusLM!.downloadModel(slug: _modelSlug);
       
       setState(() => _status = 'Loading model...');
-      await _cactusLM!.initializeModel(CactusInitParams(model: _modelSlug));      await _cactusLM!.downloadModel(model: _modelSlug);        _status = 'Model loaded: $_modelSlug';
+            await _cactusLM!.initializeModel(CactusInitParams(model: _modelSlug));
+      
+      setState(() {
+        _isModelLoaded = true;
+        _status = 'Model loaded: $_modelSlug';
+      });
       });
     } catch (e) {
       setState(() => _status = 'Error: $e');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
+      await _cactusLM!.initializeModel(CactusInitParams(model: _modelSlug));        ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Error initializing model: $e')),
         );
       }
