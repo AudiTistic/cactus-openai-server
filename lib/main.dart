@@ -1,24 +1,23 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:cactus/cactus.dart';
+import 'package:http/http.dart' as http;
 import 'package:shelf/shelf.dart' as shelf;
 import 'package:shelf/shelf_io.dart' as shelf_io;
-import 'package:network_info_plus/network_info_plus.dart';
 
 void main() {
-  runApp(const CactusOpenAIServerApp());
+  runApp(const OpenAIProxyApp());
 }
 
-class CactusOpenAIServerApp extends StatelessWidget {
-  const CactusOpenAIServerApp({super.key});
+class OpenAIProxyApp extends StatelessWidget {
+  const OpenAIProxyApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Cactus OpenAI Server',
+      title: 'OpenAI Proxy Server',
       theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.green),
+        colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
         useMaterial3: true,
       ),
       home: const ServerScreen(),
@@ -36,251 +35,202 @@ class ServerScreen extends StatefulWidget {
 class _ServerScreenState extends State<ServerScreen> {
   HttpServer? _server;
   bool _isRunning = false;
-  String _ipAddress = 'Loading...';
   final int _port = 8080;
-  String _logs = '';
-  CactusLM? _cactusLM;
-  bool _modelLoaded = false;
+  String _backendUrl = 'https://api.openai.com';
+  String _apiKey = '';
+  final TextEditingController _backendController = TextEditingController();
+  final TextEditingController _apiKeyController = TextEditingController();
 
   @override
   void initState() {
     super.initState();
-    _initializeServer();
+    _backendController.text = _backendUrl;
   }
 
-  Future<void> _initializeServer() async {
-    // Get IP address
-    final info = NetworkInfo();
-    final wifiIP = await info.getWifiIP();
-    setState(() {
-      _ipAddress = wifiIP ?? 'Unknown';
-    });
-
-    // Initialize Cactus
-    _addLog('Initializing Cactus engine...');
-    try {
-      _cactusLM = CactusLM();
-      // Note: You'll need to configure telemetry token in production
-      // CactusConfig.isTelemetryEnabled = true;
-      _modelLoaded = true;
-      _addLog('Cactus engine ready');
-    } catch (e) {
-      _addLog('Cactus init error: $e');
-    }
-  }
-
-  void _addLog(String message) {
-    setState(() {
-      _logs = '${DateTime.now().toString().substring(11, 19)}: $message\\n$_logs';
-    });
+  @override
+  void dispose() {
+    _stopServer();
+    _backendController.dispose();
+    _apiKeyController.dispose();
+    super.dispose();
   }
 
   Future<void> _startServer() async {
-    if (!_modelLoaded) {
-      _addLog('ERROR: Cactus not initialized');
-      return;
-    }
+    if (_isRunning) return;
 
     try {
-      _server = await shelf_io.serve(
-        _handleRequest,
-        InternetAddress.anyIPv4,
-        _port,
-      );
+      final handler = const shelf.Pipeline()
+          .addMiddleware(shelf.logRequests())
+          .addHandler(_handleRequest);
+
+      _server = await shelf_io.serve(handler, InternetAddress.anyIPv4, _port);
       setState(() {
         _isRunning = true;
+        _backendUrl = _backendController.text;
+        _apiKey = _apiKeyController.text;
       });
-      _addLog('Server started on $_ipAddress:$_port');
     } catch (e) {
-      _addLog('Server start error: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error starting server: $e')),
+        );
+      }
     }
   }
 
   Future<void> _stopServer() async {
-    await _server?.close(force: true);
-    setState(() {
-      _isRunning = false;
-    });
-    _addLog('Server stopped');
+    if (_server != null) {
+      await _server!.close(force: true);
+      setState(() {
+        _isRunning = false;
+      });
+    }
   }
 
   Future<shelf.Response> _handleRequest(shelf.Request request) async {
-    _addLog('${request.method} ${request.url.path}');
-
-    // CORS headers
-    final headers = {
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-      'Content-Type': 'application/json',
-    };
-
-    if (request.method == 'OPTIONS') {
-      return shelf.Response.ok('', headers: headers);
-    }
-
-    // Health check
-    if (request.method == 'GET' && request.url.path == '') {
-      return shelf.Response.ok(
-        jsonEncode({'status': 'ok', 'engine': 'cactus'}),
-        headers: headers,
-      );
-    }
-
-    // OpenAI chat completions endpoint
-    if (request.method == 'POST' && request.url.path == 'v1/chat/completions') {
-      try {
-        final body = await request.readAsString();
-        final payload = jsonDecode(body) as Map<String, dynamic>;
-        
-        final messages = payload['messages'] as List<dynamic>?;
-        if (messages == null || messages.isEmpty) {
-          return shelf.Response(400,
-              body: jsonEncode({'error': 'messages required'}),
-              headers: headers);
-        }
-
-        // Build prompt from messages
-        final prompt = _buildPrompt(messages.cast<Map<String, dynamic>>());
-        
-        // Generate with Cactus
-        final result = await _cactusLM!.generateCompletion(
-          input: prompt,
-          maxTokens: (payload['max_tokens'] as int?) ?? 256,
-          temperature: ((payload['temperature'] as num?) ?? 0.7).toDouble(),
-        );
-
-        // OpenAI-compatible response
-        final response = {
-          'id': 'chatcmpl-${DateTime.now().millisecondsSinceEpoch}',
-          'object': 'chat.completion',
-          'created': DateTime.now().millisecondsSinceEpoch ~/ 1000,
-          'model': payload['model'] ?? 'cactus-default',
-          'choices': [
-            {
-              'index': 0,
-              'message': {
-                'role': 'assistant',
-                'content': result.text,
-              },
-              'finish_reason': 'stop',
-            }
-          ],
-          'usage': {
-            'prompt_tokens': prompt.length ~/ 4,
-            'completion_tokens': result.text.length ~/ 4,
-            'total_tokens': (prompt.length + result.text.length) ~/ 4,
-          }
-        };
-
-        _addLog('Completed: ${result.text.substring(0, result.text.length > 30 ? 30 : result.text.length)}...');
-        return shelf.Response.ok(jsonEncode(response), headers: headers);
-      } catch (e) {
-        _addLog('Error: $e');
-        return shelf.Response(500,
-            body: jsonEncode({'error': e.toString()}),
-            headers: headers);
+    try {
+      // Only handle OpenAI API endpoints
+      if (!request.url.path.startsWith('v1/')) {
+        return shelf.Response.notFound('Not Found');
       }
-    }
 
-    // Models list endpoint
-    if (request.method == 'GET' && request.url.path == 'v1/models') {
-      return shelf.Response.ok(
-        jsonEncode({
-          'object': 'list',
-          'data': [
-            {'id': 'cactus-default', 'object': 'model', 'owned_by': 'cactus'}
-          ]
-        }),
-        headers: headers,
+      // Construct backend URL
+      final backendUri = Uri.parse('$_backendUrl/${request.url.path}');
+      
+      // Read request body
+      final body = await request.readAsString();
+      
+      // Forward request to backend
+      final headers = {
+        'Content-Type': 'application/json',
+        if (_apiKey.isNotEmpty) 'Authorization': 'Bearer $_apiKey',
+      };
+
+      http.Response backendResponse;
+      
+      if (request.method == 'GET') {
+        backendResponse = await http.get(backendUri, headers: headers);
+      } else if (request.method == 'POST') {
+        backendResponse = await http.post(
+          backendUri,
+          headers: headers,
+          body: body,
+        );
+      } else {
+        return shelf.Response(405, body: 'Method Not Allowed');
+      }
+
+      // Return backend response
+      return shelf.Response(
+        backendResponse.statusCode,
+        body: backendResponse.body,
+        headers: {'Content-Type': 'application/json'},
+      );
+    } catch (e) {
+      return shelf.Response.internalServerError(
+        body: json.encode({'error': e.toString()}),
       );
     }
-
-    return shelf.Response.notFound(
-      jsonEncode({'error': 'Not found'}),
-      headers: headers,
-    );
   }
 
-  String _buildPrompt(List<Map<String, dynamic>> messages) {
-    final buffer = StringBuffer();
-    for (final msg in messages) {
-      final role = msg['role'] as String?;
-      final content = msg['content'] as String?;
-      if (role == 'system') {
-        buffer.writeln('System: $content');
-      } else if (role == 'user') {
-        buffer.writeln('User: $content');
-      } else if (role == 'assistant') {
-        buffer.writeln('Assistant: $content');
+  String? _getLocalIP() {
+    try {
+      for (var interface in NetworkInterface.list(type: InternetAddressType.IPv4).first) {
+        for (var addr in interface.addresses) {
+          if (!addr.isLoopback) {
+            return addr.address;
+          }
+        }
       }
+    } catch (e) {
+      return null;
     }
-    buffer.write('Assistant: ');
-    return buffer.toString();
+    return null;
   }
 
   @override
   Widget build(BuildContext context) {
+    final localIP = _getLocalIP();
+    
     return Scaffold(
       appBar: AppBar(
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        title: const Text('Cactus OpenAI Server'),
+        title: const Text('OpenAI Proxy Server'),
       ),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Column(
-                  children: [
-                    Text(
-                      _isRunning ? 'Server Running' : 'Server Stopped',
-                      style: Theme.of(context).textTheme.headlineSmall,
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'http://$_ipAddress:$_port/v1/chat/completions',
-                      style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                            fontWeight: FontWeight.bold,
-                          ),
-                    ),
-                    const SizedBox(height: 16),
-                    ElevatedButton(
-                      onPressed: _modelLoaded
-                          ? (_isRunning ? _stopServer : _startServer)
-                          : null,
-                      child: Text(_isRunning ? 'Stop Server' : 'Start Server'),
-                    ),
-                  ],
-                ),
+            TextField(
+              controller: _backendController,
+              decoration: const InputDecoration(
+                labelText: 'Backend URL',
+                hintText: 'https://api.openai.com',
+                border: OutlineInputBorder(),
               ),
+              enabled: !_isRunning,
             ),
             const SizedBox(height: 16),
-            Text('Logs:', style: Theme.of(context).textTheme.titleMedium),
-            const SizedBox(height: 8),
-            Expanded(
-              child: Card(
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.all(8.0),
-                  child: Text(
-                    _logs.isEmpty ? 'No logs yet' : _logs,
-                    style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+            TextField(
+              controller: _apiKeyController,
+              decoration: const InputDecoration(
+                labelText: 'API Key (optional)',
+                border: OutlineInputBorder(),
+              ),
+              obscureText: true,
+              enabled: !_isRunning,
+            ),
+            const SizedBox(height: 24),
+            ElevatedButton(
+              onPressed: _isRunning ? _stopServer : _startServer,
+              style: ElevatedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 16),
+              ),
+              child: Text(
+                _isRunning ? 'Stop Server' : 'Start Server',
+                style: const TextStyle(fontSize: 18),
+              ),
+            ),
+            const SizedBox(height: 24),
+            if (_isRunning) ..[
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Server Running',
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.green,
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      if (localIP != null) ..[
+                        Text('Local IP: $localIP:$_port'),
+                        const SizedBox(height: 8),
+                      ],
+                      Text('Localhost: http://localhost:$_port'),
+                      const SizedBox(height: 8),
+                      Text('Backend: $_backendUrl'),
+                      const SizedBox(height: 16),
+                      const Text(
+                        'Endpoints:',
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                      const Text('• POST /v1/chat/completions'),
+                      const Text('• GET  /v1/models'),
+                    ],
                   ),
                 ),
               ),
-            ),
+            ],
           ],
         ),
       ),
     );
-  }
-
-  @override
-  void dispose() {
-    _server?.close();
-    super.dispose();
   }
 }
