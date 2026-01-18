@@ -172,9 +172,35 @@ class _ServerScreenState extends State<ServerScreen> {
     try {
       // Parse incoming OpenAI-compatible request
       final body = await request.readAsString();
-      
+   try {   
       // Handle empty body
-      if (body.isEmpty) {
+   // Handle GET /v1/models first (no body)
+      if (request.url.path == 'v1/models' && request.method == 'GET') {
+        final response = {
+          'object': 'list',
+          'data': [{
+            'id': _useCustomModel ? _customModelController.text : _modelSlug,
+            'object': 'model',
+            'created': DateTime.now().millisecondsSinceEpoch ~/ 1000,
+            'owned_by': 'cactus-ai',
+          }],
+        };
+
+        return shelf.Response.ok(
+          json.encode(response),
+          headers: {'Content-Type': 'application/json'},
+        );
+      }
+
+      // Handle POST /openai/verify
+      if (request.url.path == 'openai/verify' && request.method == 'POST') {
+        return shelf.Response.ok(
+          json.encode({'status': 'ok'}),
+          headers: {'Content-Type': 'application/json'},
+        );
+      }
+
+      // Parse   if (body.isEmpty) {
         return shelf.Response(400, 
           body: json.encode({'error': 'Request body is required'}),
           headers: {'Content-Type': 'application/json'},
